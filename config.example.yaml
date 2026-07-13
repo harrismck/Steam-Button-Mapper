@@ -1,0 +1,116 @@
+# steam-button-mapper config
+#
+# Copy this file to ~/.config/steam-button-mapper/config.yaml and edit it,
+# or point STEAM_BUTTON_MAPPER_CONFIG at a path of your choosing, or pass a
+# path as the script's first argument. Read once at startup (no hot-reload).
+
+# Substring match against connected input device names. Keep it broad
+# enough to match your keyboard whether it's on Bluetooth or a 2.4GHz
+# dongle. IE: "Node 75" matches both "Node 75 HP-1 Keyboard" (BT) and
+# "NuPhy Node 75 HP Dongle" (2.4GHz).
+device_name_match: "Node 75"
+
+# Held together with toggle_key to flip a manual override on/off. Forces
+# all gaming_only bindings active regardless of detected mode. Handy for
+# testing bindings in Desktop Mode without launching gamescope.
+toggle_modifier: KEY_LEFTALT
+toggle_key: KEY_LEFTMETA
+
+# Starting state of the manual override when the script launches.
+manual_override_default: false
+
+# How long (seconds) to cache the "is gamescope running" check before
+# rescanning /proc, and the poll interval once that first fast-poll window
+# (below) has elapsed.
+gaming_mode_cache_ttl: 1.0
+
+# Seconds between each press/release step when firing a multi-key chord or
+# combo. Small delays make some receivers register it as a genuine chord
+# rather than simultaneous noise.
+chord_gap_seconds: 0.05
+
+# Note: notify-send is reliable in Desktop Mode but may not render at
+# all in Gaming Mode/gamescope. Use the `sound` indicator below if you
+# need something you can actually perceive while in Gaming Mode.
+notifications:
+  enabled: true
+  title: "Steam Button Mapper"
+
+# Short synthesized tone played on every state change (on -> higher pitch,
+# off -> lower pitch). Generated on the fly with no extra dependencies or
+# sound files, played via paplay/aplay/afplay (whichever is found). This
+# is the reliable indicator while in Gaming Mode, where desktop
+# notifications often don't show.
+sound:
+  enabled: true
+  on_hz: 880
+  off_hz: 440
+  duration_seconds: 0.15
+
+# Optional: a bash command (run via `bash -c`) any time the effective
+# remap state changes -- i.e. whenever (gamescope running) OR (manual
+# override) flips true/false, whether that happens via the toggle chord or
+# Gaming Mode being entered/exited on its own. The command receives an
+# env var STATE set to "on" or "off". Leave empty/omit to disable.
+#
+# NOTE: this can only run shell commands -- it can't fire a keypress to
+# trigger something in your keyboard's own firmware (e.g. an RGB-cycle
+# action bound in your keyboard's configurator). A synthesized keypress
+# only reaches the Linux input stack, not your keyboard's onboard MCU. If
+# you want to automate firmware-level actions like lighting, this hook
+# should call a script that talks to the keyboard's hardware directly
+# (e.g. HID reports via hidraw), not one that fakes a keystroke.
+on_state_change_hook: ""
+
+# --- key bindings ---
+#
+# Each entry maps a keyboard trigger key to an action:
+#   type: "pad"  -> fires gamepad button(s) via the virtual controller
+#                    (what SteamOS/gamescope watches for globally, works
+#                    in-game).
+#   type: "keys" -> fires a keyboard combo via the virtual keyboard (a
+#                    Steam UI-level shortcut; works while Steam's own
+#                    window/overlay has focus, NOT once a game has taken
+#                    over input -- known Valve limitation).
+#   codes: list of ecode names, in the order they should be pressed (and
+#          released in reverse order). Single-button entries just need one.
+#   gaming_only: if true (default), the trigger key behaves completely
+#          normally in Desktop Mode (or when the override is off) and only
+#          performs the action in Gaming Mode / under manual override.
+#          Set false if you want it to always fire regardless of mode.
+#
+# Finding ecode names: there's no single canonical published list, but the
+# authoritative source is the Linux kernel header these names come from:
+#   https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
+# Or list everything your evdev install knows about locally:
+#   python3 -c "from evdev import ecodes; print(sorted(k for k in ecodes.ecodes if k.startswith(('KEY_','BTN_'))))"
+# Common examples: KEY_A..KEY_Z, KEY_0..KEY_9, KEY_LEFTCTRL, KEY_LEFTALT,
+# KEY_LEFTSHIFT, KEY_LEFTMETA, KEY_INSERT, KEY_DELETE, KEY_HOME, KEY_END,
+# KEY_F13..KEY_F24, BTN_MODE (Guide/Steam), BTN_SOUTH/EAST/WEST/NORTH
+# (A/B/X/Y), BTN_START, BTN_SELECT, BTN_TL, BTN_TR.
+bindings:
+  # Steam button -- opens the Steam menu from anywhere, including in-game
+  # By default bound to LEFTMETA aka the left Windows Key.
+  KEY_LEFTMETA:
+    type: pad
+    codes: [BTN_MODE]
+    gaming_only: true
+
+  # QAM ("..."). Works in Steam's own UI/overlay; does not currently work
+  # once a game has focus.
+  KEY_DELETE:
+    type: keys
+    codes: [KEY_LEFTCTRL, KEY_2]
+    gaming_only: true
+
+  # Menu / context-menu-equivalent ("right-click" on a hovered item).
+  KEY_INSERT:
+    type: keys
+    codes: [KEY_LEFTCTRL, KEY_0]
+    gaming_only: true
+
+  # Optional: "View" button. Uncomment and pick a spare key if you want it.
+  # KEY_HOME:
+  #   type: keys
+  #   codes: [KEY_LEFTCTRL, KEY_9]
+  #   gaming_only: true

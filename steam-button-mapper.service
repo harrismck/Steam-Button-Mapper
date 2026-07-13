@@ -1,0 +1,23 @@
+[Unit]
+Description=Steam button mapper
+After=graphical-session.target
+
+[Service]
+# Verify this path matches your system first: `which python3`
+# (systemd ExecStart requires an absolute path, not just `python3`)
+# %h is a shorthand for your home directory.
+ExecStart=/usr/bin/python3 %h/steam-button-mapper/steam_button_mapper.py
+Environment=STEAM_BUTTON_MAPPER_CONFIG=%h/.config/steam-button-mapper/config.yaml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+
+# --- Alternatives, if you're not using system-installed packages ---
+#
+# venv:
+#   ExecStart=%h/steam-button-mapper-venv/bin/python %h/steam-button-mapper/steam_button_mapper.py
+#
+# distrobox:
+#   ExecStart=%h/.local/bin/distrobox enter pyenv -- python3 %h/steam-button-mapper/steam_button_mapper.py
