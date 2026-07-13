@@ -5,12 +5,10 @@ setup (e.g. a handheld docked to a TV) can still open the Steam menu,
 Quick Access Menu (QAM), and other shortcuts that otherwise require a controller.
 
 ## Why this exists
-
-SteamOS's built in `Ctrl+1` / `Ctrl+2` keyboard shortcuts for the Steam menu and
-QAM only work while Steam's own UI/overlay has keyboard focus, they don't
-work once a game has taken over input. What *does* work everywhere, is the
-literal gamepad Guide button signal (`BTN_MODE`in Linux terms). This is what a
-real controller's dedicated Steam button (or xbox button, PS button etc), actually sends.
+It's very annoying to navigate SteamOS with a mouse and keyboard, due to the lack of
+a dedicated "Steam" key. And the Windows key doesn't even do anything in gaming mode!
+Yes, you can press `Ctrl+1` / `Ctrl+2` for the steam menu or QAM, but that doesn't work
+while in game. So, this little script solves that with some key remapping!
 
 This tool grabs your keyboard, mirrors all its normal keys through a
 virtual keyboard so nothing is lost, and lets you designate specific keys
