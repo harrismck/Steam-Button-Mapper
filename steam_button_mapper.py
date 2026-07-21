@@ -5,15 +5,27 @@ steam_button_mapper.py
 Maps keyboard keys to SteamOS gamepad/keyboard signals. e.g. a "Steam
 button" that opens the Steam menu from anywhere (including in-game), and
 QAM/Menu shortcuts that work while Steam's own UI has focus. Config lives
-in config.yaml (see config.example.yaml for a starting point).
+in config.yaml (see config.example.yaml for a documented starting point).
+
+A lightweight Supervisor watches for the configured keyboard connecting or
+disconnecting (polling, not udev -- simpler, no extra dependency, and a
+few seconds of latency doesn't matter for this use case) and starts/stops
+the actual Mapper accordingly, so plugging the keyboard in later, or
+switching between Bluetooth and the 2.4GHz dongle, just works without a
+restart.
 
 Mechanism notes:
 - Steam button = BTN_MODE (Guide) on a recognized gamepad-class device.
-  Works via a virtual "Xbox 360 pad" identity (045e:028e) everywhere.
+  Works via a virtual "Xbox 360 pad" identity (045e:028e), everywhere,
+  including in-game.
 - QAM ("...") and Menu are Steam's own UI-level keyboard shortcuts
   (Ctrl+2 / Ctrl+0 by default here). These work while Steam's own
   window/overlay has keyboard focus, but do NOT work once a game has taken
   over input focus. Known Valve limitation :(
+- Desktop notifications (notify-send) are reliable in Desktop Mode but may
+  not render at all in Gaming Mode/gamescope, which typically doesn't run
+  a full desktop notification daemon. The audio indicator (below) is the
+  more dependable signal while actually in Gaming Mode.
 
 Requires: python-evdev, PyYAML  (pip install --user evdev pyyaml, or via
 distrobox if pip/build tools aren't available on the host -- see README)
@@ -89,6 +101,7 @@ class Config:
     def __init__(self, raw, path):
         self.path = path
         self.device_name_match = raw.get("device_name_match", "Node 75")
+        self.device_poll_seconds = float(raw.get("device_poll_seconds", 3.0))
         self.toggle_modifier = resolve_code(raw.get("toggle_modifier", "KEY_LEFTALT"))
         self.toggle_key = resolve_code(raw.get("toggle_key", "KEY_LEFTMETA"))
         self.manual_override_default = bool(raw.get("manual_override_default", False))
@@ -107,7 +120,8 @@ class Config:
 
         # A plain bash command, run via `bash -c` with STATE=on/off in its
         # environment, any time the effective remap state changes. This is
-        # for anything shell-scriptable.
+        # for anything shell-scriptable (LEDs, external tools) -- it can
+        # NOT trigger firmware-level keyboard actions (see module docstring).
         self.on_state_change_hook = raw.get("on_state_change_hook") or None
 
         self.bindings = parse_bindings(raw.get("bindings", {}))
@@ -141,14 +155,17 @@ def load_config():
 
 # ---------------- device discovery ----------------
 
-def find_devices(name_match):
+def find_devices(name_match, required=True):
     matches = []
     for path in list_devices():
-        dev = InputDevice(path)
+        try:
+            dev = InputDevice(path)
+        except OSError:
+            continue  # disappeared mid-scan, e.g. mid-unplug
         if name_match.lower() in dev.name.lower():
             if dev.capabilities().get(ecodes.EV_KEY):
                 matches.append(dev)
-    if not matches:
+    if not matches and required:
         raise RuntimeError(
             f"No input device matching '{name_match}' with key events found. "
             f"Run `python3 -c \"import evdev; print([evdev.InputDevice(p).name for p in evdev.list_devices()])\"` "
@@ -192,10 +209,10 @@ def _find_audio_player():
     return None
 
 
-# ---------------- mapper ----------------
+# ---------------- mapper (bound to one live set of devices) ----------------
 
 class Mapper:
-    def __init__(self, cfg, devices):
+    def __init__(self, cfg, devices, audio_player):
         self.cfg = cfg
         self.devices = devices
         self.held = set()
@@ -203,7 +220,7 @@ class Mapper:
         self._gaming_mode_cache = {"value": False, "checked_at": 0.0}
         self.last_known_state = None
         self._tone_paths = {}
-        self._audio_player = _find_audio_player()
+        self._audio_player = audio_player
 
         for d in devices:
             d.grab()
@@ -251,6 +268,16 @@ class Mapper:
 
     def effective_state(self):
         return self.is_gaming_mode() or self.manual_override
+
+    # ---- device liveness (for the Supervisor) ----
+
+    def devices_alive(self):
+        for d in self.devices:
+            try:
+                d.capabilities()
+            except OSError:
+                return False
+        return True
 
     # ---- side effects ----
 
@@ -401,23 +428,84 @@ class Mapper:
                 pass
 
 
+# ---------------- supervisor (watches for the keyboard connecting/disconnecting) ----------------
+
+class Supervisor:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.audio_player = _find_audio_player()
+        self.mapper = None
+        self.mapper_task = None
+
+    def _mapper_alive(self):
+        if self.mapper is None or self.mapper_task is None:
+            return False
+        if self.mapper_task.done():
+            return False
+        return self.mapper.devices_alive()
+
+    async def _start_mapper(self, devices):
+        print("Device found, starting mapper:")
+        for d in devices:
+            print(f"  {d.name} ({d.path})")
+        self.mapper = Mapper(self.cfg, devices, self.audio_player)
+        self.mapper_task = asyncio.create_task(self.mapper.run())
+
+    async def _stop_mapper(self, reason):
+        if self.mapper is None:
+            return
+        print(f"Stopping mapper: {reason}")
+        self.mapper_task.cancel()
+        try:
+            await self.mapper_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        try:
+            self.mapper.close()
+        except Exception:
+            pass
+        self.mapper = None
+        self.mapper_task = None
+
+    async def run(self):
+        poll_interval = self.cfg.device_poll_seconds
+        printed_waiting = False
+
+        while True:
+            if self.mapper is not None and not self._mapper_alive():
+                await self._stop_mapper("device disconnected or mapper crashed")
+
+            if self.mapper is None:
+                devices = find_devices(self.cfg.device_name_match, required=False)
+                if devices:
+                    # brief settle so sibling interfaces of a composite
+                    # device (e.g. a dongle splitting into several nodes)
+                    # have time to enumerate together
+                    await asyncio.sleep(0.5)
+                    devices = find_devices(self.cfg.device_name_match, required=False)
+                if devices:
+                    await self._start_mapper(devices)
+                    printed_waiting = False
+                elif not printed_waiting:
+                    print(f"Waiting for a device matching '{self.cfg.device_name_match}'...")
+                    printed_waiting = True
+
+            await asyncio.sleep(poll_interval)
+
+    async def shutdown(self):
+        await self._stop_mapper("shutting down")
+
+
 def main():
     cfg = load_config()
     print(f"Loaded config: {cfg.path}")
 
-    devices = find_devices(cfg.device_name_match)
-    print("Grabbing:")
-    for d in devices:
-        print(f"  {d.name} ({d.path})")
-
-    mapper = Mapper(cfg, devices)
-    print("Steam button mapper running. Ctrl+C to stop.")
+    supervisor = Supervisor(cfg)
+    print("Steam button mapper supervisor running. Ctrl+C to stop.")
     try:
-        asyncio.run(mapper.run())
+        asyncio.run(supervisor.run())
     except KeyboardInterrupt:
-        pass
-    finally:
-        mapper.close()
+        asyncio.run(supervisor.shutdown())
 
 
 if __name__ == "__main__":

@@ -10,6 +10,15 @@
 # "NuPhy Node 75 HP Dongle" (2.4GHz).
 device_name_match: "Node 75"
 
+# How often (seconds) to check whether that device is currently connected.
+# The mapper starts automatically when it appears and stops (releasing the
+# grab cleanly) when it disappears. So unplugging/replugging, or
+# switching between Bluetooth and the 2.4GHz dongle, just works without a
+# restart. A few seconds of detection latency is fine for this use case;
+# lower this if you want it to notice faster, at the cost of more frequent
+# scanning.
+device_poll_seconds: 3.0
+
 # Held together with toggle_key to flip a manual override on/off. Forces
 # all gaming_only bindings active regardless of detected mode. Handy for
 # testing bindings in Desktop Mode without launching gamescope.
@@ -29,12 +38,12 @@ gaming_mode_cache_ttl: 1.0
 # rather than simultaneous noise.
 chord_gap_seconds: 0.05
 
-# Note: notify-send is reliable in Desktop Mode but may not render at
-# all in Gaming Mode/gamescope. Use the `sound` indicator below if you
-# need something you can actually perceive while in Gaming Mode.
 notifications:
   enabled: true
   title: "Steam Button Mapper"
+  # Note: notify-send is reliable in Desktop Mode but may not render at
+  # all in Gaming Mode/gamescope. Use the `sound` indicator below if youd
+  # need something you can actually perceive while in Gaming Mode.
 
 # Short synthesized tone played on every state change (on -> higher pitch,
 # off -> lower pitch). Generated on the fly with no extra dependencies or
@@ -48,12 +57,12 @@ sound:
   duration_seconds: 0.15
 
 # Optional: a bash command (run via `bash -c`) any time the effective
-# remap state changes -- i.e. whenever (gamescope running) OR (manual
+# remap state changes. i.e. whenever (gamescope running) OR (manual
 # override) flips true/false, whether that happens via the toggle chord or
 # Gaming Mode being entered/exited on its own. The command receives an
 # env var STATE set to "on" or "off". Leave empty/omit to disable.
 #
-# NOTE: this can only run shell commands -- it can't fire a keypress to
+# NOTE: this can only run shell commands. It can't fire a keypress to
 # trigger something in your keyboard's own firmware (e.g. an RGB-cycle
 # action bound in your keyboard's configurator). A synthesized keypress
 # only reaches the Linux input stack, not your keyboard's onboard MCU. If
@@ -71,7 +80,7 @@ on_state_change_hook: ""
 #   type: "keys" -> fires a keyboard combo via the virtual keyboard (a
 #                    Steam UI-level shortcut; works while Steam's own
 #                    window/overlay has focus, NOT once a game has taken
-#                    over input -- known Valve limitation).
+#                    over input).
 #   codes: list of ecode names, in the order they should be pressed (and
 #          released in reverse order). Single-button entries just need one.
 #   gaming_only: if true (default), the trigger key behaves completely
@@ -89,7 +98,7 @@ on_state_change_hook: ""
 # KEY_F13..KEY_F24, BTN_MODE (Guide/Steam), BTN_SOUTH/EAST/WEST/NORTH
 # (A/B/X/Y), BTN_START, BTN_SELECT, BTN_TL, BTN_TR.
 bindings:
-  # Steam button -- opens the Steam menu from anywhere, including in-game
+  # Steam button: opens the Steam menu from anywhere, including in-game
   # By default bound to LEFTMETA aka the left Windows Key.
   KEY_LEFTMETA:
     type: pad
@@ -97,7 +106,8 @@ bindings:
     gaming_only: true
 
   # QAM ("..."). Works in Steam's own UI/overlay; does not currently work
-  # once a game has focus.
+  # once a game has focus. Rightmost key on a 75% layout, matching where
+  # "..." sits physically on the Legion Go S.
   KEY_DELETE:
     type: keys
     codes: [KEY_LEFTCTRL, KEY_2]

@@ -22,9 +22,9 @@ Bindings only take effect while SteamOS Gaming Mode (gamescope) is
 detected running, or while manually overridden -- so the same keys behave
 completely normally in Desktop Mode.
 
-## Features
 
 - Remap any key to: another key, a combo of keys, or a virtual gamepad button press!
+- Watches for your specified input devices connecting/disconnecting: Automatically turns on when you connect your keyboard!
 - Already set up to map the buttons you'll most likely want in SteamOS
 - Can toggle on/off the key mapping with a button combo 
   - In addition to automatically toggling off when in Desktop Mode
@@ -33,12 +33,18 @@ completely normally in Desktop Mode.
   - Can also call an arbitrary script (hook) when toggled. 
     Useful if you want to indicate the state some other way.
 - Easily customizable with a simple YAML file
+
 ## Known limitations
 
 - Keyboard-combo bindings (QAM, Menu, etc.) work while Steam's own UI has
   focus, but not once you're actually inside a running game. This is a
   known Valve limitation on the keyboard-shortcut path itself, not
   something this tool can currently work around.
+- The "real" Steam Deck QAM chord (Guide-hold + A-tap) does not currently
+  trigger QAM through SteamOS's InputPlumber support for the Legion Go S --
+  tested and confirmed not to work as of this writing. If Valve/InputPlumber
+  add that translation later, switch the QAM binding's `type` to `pad` with
+  `codes: [BTN_MODE, BTN_SOUTH]`.
 - Firmware-level keyboard actions (e.g. an RGB-lighting-cycle key bound in
   your keyboard's own configurator) can't be triggered by this tool's
   virtual keyboard.
@@ -182,6 +188,27 @@ journalctl --user -u steam-button-mapper -f
 The service file has commented-out `ExecStart` alternatives for a venv or
 distrobox setup, if you ended up needing one of those instead.
 
+## Steam Big Picture shortcut
+
+For a way to manually (re)start the mapper from Gaming Mode without a
+terminal, add `launch_or_activate.sh` as a Steam shortcut:
+
+1. In Desktop Mode, open Steam.
+2. Library -> "+ Add a Game" (bottom left) -> "Add a Non-Steam Game".
+3. Browse to `launch_or_activate.sh` in this project directory and add it.
+   (If Steam's browser won't let you select a `.sh` directly, point the
+   shortcut's Target at `/usr/bin/bash` instead and set `Launch Options` to
+   the full path of the script, via right-click -> Properties after adding.)
+4. Optionally rename it (e.g. "Enable Steam Button Mapper") and set a
+   custom icon via right-click -> Properties.
+
+It'll now show up in your Library in both Desktop and Gaming Mode.
+Launching it checks whether the systemd service is already active and, if
+so, does nothing; so it's always safe to click. Since the script exits
+almost immediately either way, Steam will briefly show it as
+"launching" and then return you to the library; that's expected, not an
+error.
+
 ## Hooks
 
 `on_state_change_hook` in your config runs a bash command any time the
@@ -214,3 +241,15 @@ converge on the real state quickly, then settles into the normal 1-second
 cache interval -- so this should self-correct almost immediately. If it's
 still wrong well after that window, check `journalctl --user -u
 steam-button-mapper` for what `is_gaming_mode()` is actually seeing.
+
+**Plugging the keyboard in doesn't do anything for a few seconds:** that's
+expected: device connect/disconnect is polled every `device_poll_seconds`
+(default 3s), not instant. Lower that value in your config if you want
+faster detection, at the cost of more frequent scanning.
+
+**The Steam shortcut doesn't seem to start the service:** it calls
+`systemctl --user`, which needs a working D-Bus user session. Normally
+automatic since it's launched from within the same graphical session as
+everything else, but if it fails, check `journalctl --user -u
+steam-button-mapper` and confirm `systemctl --user status` works at all
+from a terminal in the same session.
